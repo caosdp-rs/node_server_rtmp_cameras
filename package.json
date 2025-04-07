@@ -1,0 +1,13 @@
+{
+  "name": "node-server-rtmp-cameras",
+  "version": "1.0.0",
+  "description": "Servidor RTMP para câmeras com visualização web",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "node-media-server": "^2.6.2",
+    "express": "^4.18.2"
+  }
+} 
