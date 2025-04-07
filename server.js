@@ -34,7 +34,7 @@ app.get('/', (req, res) => {
 });
 
 // Iniciar servidor web
-app.listen(PORT, () => {
-  console.log(`Servidor web rodando em http://localhost:${PORT}`);
-  console.log(`Servidor RTMP rodando em rtmp://localhost:${config.rtmp.port}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor web rodando em http://0.0.0.0:${PORT}`);
+  console.log(`Servidor RTMP rodando em rtmp://0.0.0.0:${config.rtmp.port}`);
 }); 
