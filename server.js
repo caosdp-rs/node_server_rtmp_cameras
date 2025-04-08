@@ -1,6 +1,7 @@
 const NodeMediaServer = require('node-media-server');
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 
 // Configuração do servidor RTMP
 const config = {
@@ -14,8 +15,26 @@ const config = {
   http: {
     port: 8000,
     allow_origin: '*'
+  },
+  trans: {
+    ffmpeg: '/usr/bin/ffmpeg', // Ajuste o caminho do ffmpeg conforme necessário
+    tasks: [
+      {
+        app: 'live',
+        hls: true,
+        hlsFlags: '[hls_time=60:hls_list_size=1:hls_flags=delete_segments]',
+        dash: true,
+        dashFlags: '[f=dash:window_size=1:extra_window_size=0]'
+      }
+    ]
   }
 };
+
+// Criar diretório para os arquivos temporários se não existir
+const tempDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir);
+}
 
 // Inicialização do servidor RTMP
 const nms = new NodeMediaServer(config);
@@ -27,6 +46,7 @@ const PORT = 3000;
 
 // Servir arquivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/temp', express.static(tempDir));
 
 // Rota principal
 app.get('/', (req, res) => {

@@ -73,7 +73,7 @@
             if (flvjs.isSupported()) {
                 const flvPlayer = flvjs.createPlayer({
                     type: 'flv',
-                    url: `http://localhost:8000/live/${streamName}.flv`,
+                    url: `http://${window.location.hostname}:8000/live/${streamName}.flv`,
                     isLive: true
                 });
                 flvPlayer.attachMediaElement(video);
