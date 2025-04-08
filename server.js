@@ -2,9 +2,20 @@ const NodeMediaServer = require('node-media-server');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { exec } = require('child_process');
 
-// Configuração do servidor RTMP
+// Caminho dinâmico do ffmpeg
+const ffmpegPath = require('child_process')
+  .execSync('which ffmpeg')
+  .toString().trim();
+
+// Diretórios
+const recordingsDir = path.join(__dirname, 'recordings');
+if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir);
+
+// Controle de gravações por câmera
+const recordingTimers = {};
+
 const config = {
   rtmp: {
     port: 1935,
@@ -18,7 +29,7 @@ const config = {
     allow_origin: '*'
   },
   trans: {
-    ffmpeg: '/usr/bin/ffmpeg',
+    ffmpeg: ffmpegPath,
     tasks: [
       {
         app: 'live',
@@ -31,103 +42,62 @@ const config = {
   }
 };
 
-// Criar diretórios
-const tempDir = path.join(__dirname, 'temp');
-if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-
-const recordingsDir = path.join(__dirname, 'recordings');
-if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir);
-
-// Inicialização
 const nms = new NodeMediaServer(config);
-const ffmpegProcesses = new Map(); // Guardar processos por stream
-const newRecordingMode = new Map(); // Guarda se uma nova gravação deve ser iniciada
 
+// Iniciar gravação contínua de 60s para a câmera
+function startContinuousRecording(streamName) {
+  if (recordingTimers[streamName]) return;
 
-// Evento quando stream começa
-nms.on('prePublish', (id, StreamPath, args) => {
-  const streamName = StreamPath.split('/')[2];
-  
-  // Verifica se deve iniciar nova gravação com timestamp
-  let outputFile;
-  if (newRecordingMode.get(streamName)) {
+  let index = 1;
+  recordingTimers[streamName] = setInterval(() => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    outputFile = path.join(recordingsDir, `${streamName}_${timestamp}.mp4`);
-    newRecordingMode.delete(streamName); // só uma vez
-  } else {
-    outputFile = path.join(recordingsDir, `${streamName}.mp4`);
+    const outputFile = path.join(recordingsDir, `${streamName}-${timestamp}.mp4`);
+    const ffmpegCommand = `${ffmpegPath} -i rtmp://localhost:1935/live/${streamName} -c copy -f mp4 -t 60 -y "${outputFile}"`;
+
+    exec(ffmpegCommand, (error) => {
+      if (error) {
+        console.error(`[ERRO] Gravação ${streamName}: ${error.message}`);
+      } else {
+        console.log(`[INFO] Gravado: ${outputFile}`);
+      }
+    });
+  }, 60000); // a cada 60s
+}
+
+// Parar gravação (se necessário futuramente)
+function stopRecording(streamName) {
+  if (recordingTimers[streamName]) {
+    clearInterval(recordingTimers[streamName]);
+    delete recordingTimers[streamName];
   }
+}
 
-  const ffmpeg = spawn(config.trans.ffmpeg, [
-    '-i', `rtmp://localhost:1935${StreamPath}`,
-    '-c', 'copy',
-    '-f', 'mp4',
-    '-y', outputFile
-  ]);
-
-  ffmpeg.stderr.on('data', data => {
-    console.log(`FFmpeg (${streamName}): ${data}`);
-  });
-
-  ffmpeg.on('close', code => {
-    console.log(`Gravação encerrada para ${streamName} (code ${code})`);
-  });
-
-  ffmpegProcesses.set(id, ffmpeg);
-  console.log(`Gravação iniciada para stream ${streamName} em ${outputFile}`);
+// Quando começa o stream
+nms.on('postPublish', (id, streamPath, args) => {
+  const streamName = streamPath.split('/')[2];
+  console.log(`[STREAM ON] ${streamName}`);
+  startContinuousRecording(streamName);
 });
 
-// Evento quando stream termina
-nms.on('donePublish', (id, StreamPath, args) => {
-  const ffmpeg = ffmpegProcesses.get(id);
-  if (ffmpeg) {
-    ffmpeg.kill('SIGINT'); // Encerra o FFmpeg corretamente
-    ffmpegProcesses.delete(id);
-    console.log(`Gravação parada para stream ${StreamPath}`);
-  }
+// Quando o stream para
+nms.on('donePublish', (id, streamPath, args) => {
+  const streamName = streamPath.split('/')[2];
+  console.log(`[STREAM OFF] ${streamName}`);
+  stopRecording(streamName);
 });
 
 nms.run();
 
-// Servidor Web
+// Servidor web para acessar gravações
 const app = express();
 const PORT = 3000;
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/temp', express.static(tempDir));
 app.use('/recordings', express.static(recordingsDir));
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-// Rota para forçar uma nova gravação com nome único para uma câmera específica
-app.get('/recordings/start-new/:camera', (req, res) => {
-  const camera = req.params.camera;
-  newRecordingMode.set(camera, true); // Sinaliza que o próximo prePublish vai usar novo nome
-  res.send(`Nova gravação será criada para a câmera "${camera}" na próxima transmissão.`);
+  res.send(`<h2>Servidor de Gravações</h2><p>Acesse <a href="/recordings">/recordings</a> para ver os arquivos.</p>`);
 });
 
-// Rota para listar os arquivos salvos em /recordings
-app.get('/recordings/list', (req, res) => {
-  fs.readdir(recordingsDir, (err, files) => {
-    if (err) {
-      console.error('Erro ao ler o diretório de gravações:', err);
-      return res.status(500).send('Erro ao listar gravações.');
-    }
-
-    // Filtra apenas arquivos .mp4 e gera links para download
-    const mp4Files = files.filter(file => file.endsWith('.mp4'));
-    const fileLinks = mp4Files.map(file => `<li><a href="/recordings/${file}" target="_blank">${file}</a></li>`);
-
-    res.send(`
-      <h1>Gravações Salvas</h1>
-      <ul>
-        ${fileLinks.join('\n')}
-      </ul>
-    `);
-  });
-});
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor web rodando em http://0.0.0.0:${PORT}`);
-  console.log(`Servidor RTMP rodando em rtmp://0.0.0.0:${config.rtmp.port}`);
+app.listen(PORT, () => {
+  console.log(`Servidor web rodando: http://localhost:${PORT}`);
 });
