@@ -41,13 +41,23 @@ if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir);
 // Inicialização
 const nms = new NodeMediaServer(config);
 const ffmpegProcesses = new Map(); // Guardar processos por stream
+const newRecordingMode = new Map(); // Guarda se uma nova gravação deve ser iniciada
+
 
 // Evento quando stream começa
 nms.on('prePublish', (id, StreamPath, args) => {
   const streamName = StreamPath.split('/')[2];
-  const outputFile = path.join(recordingsDir, `${streamName}.mp4`);
+  
+  // Verifica se deve iniciar nova gravação com timestamp
+  let outputFile;
+  if (newRecordingMode.get(streamName)) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    outputFile = path.join(recordingsDir, `${streamName}_${timestamp}.mp4`);
+    newRecordingMode.delete(streamName); // só uma vez
+  } else {
+    outputFile = path.join(recordingsDir, `${streamName}.mp4`);
+  }
 
-  // Spawn do FFmpeg (grava continuamente sobrescrevendo o mesmo arquivo)
   const ffmpeg = spawn(config.trans.ffmpeg, [
     '-i', `rtmp://localhost:1935${StreamPath}`,
     '-c', 'copy',
@@ -64,7 +74,7 @@ nms.on('prePublish', (id, StreamPath, args) => {
   });
 
   ffmpegProcesses.set(id, ffmpeg);
-  console.log(`Gravação iniciada para stream ${streamName}`);
+  console.log(`Gravação iniciada para stream ${streamName} em ${outputFile}`);
 });
 
 // Evento quando stream termina
@@ -90,6 +100,13 @@ app.use('/recordings', express.static(recordingsDir));
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+// Rota para forçar uma nova gravação com nome único para uma câmera específica
+app.get('/recordings/start-new/:camera', (req, res) => {
+  const camera = req.params.camera;
+  newRecordingMode.set(camera, true); // Sinaliza que o próximo prePublish vai usar novo nome
+  res.send(`Nova gravação será criada para a câmera "${camera}" na próxima transmissão.`);
+});
+
 // Rota para listar os arquivos salvos em /recordings
 app.get('/recordings/list', (req, res) => {
   fs.readdir(recordingsDir, (err, files) => {
