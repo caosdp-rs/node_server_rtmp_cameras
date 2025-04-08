@@ -2,6 +2,7 @@ const NodeMediaServer = require('node-media-server');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
 
 // Configuração do servidor RTMP
 const config = {
@@ -36,8 +37,33 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir);
 }
 
+// Criar diretório para os arquivos gravados se não existir
+const recordingsDir = path.join(__dirname, 'recordings');
+if (!fs.existsSync(recordingsDir)) {
+  fs.mkdirSync(recordingsDir);
+}
+
 // Inicialização do servidor RTMP
 const nms = new NodeMediaServer(config);
+
+// Evento quando um stream começa
+nms.on('prePublish', (id, StreamPath, args) => {
+  const streamName = StreamPath.split('/')[2];
+  const outputFile = path.join(recordingsDir, `${streamName}.mp4`);
+  
+  // Comando FFmpeg para gravar o stream
+  const ffmpegCommand = `ffmpeg -i rtmp://localhost:1935${StreamPath} -c copy -f mp4 -t 60 -y ${outputFile}`;
+  
+  // Executar o comando FFmpeg
+  exec(ffmpegCommand, (error) => {
+    if (error) {
+      console.error(`Erro ao gravar stream: ${error}`);
+    } else {
+      console.log(`Stream ${streamName} gravado com sucesso`);
+    }
+  });
+});
+
 nms.run();
 
 // Configuração do servidor web
@@ -47,6 +73,7 @@ const PORT = 3000;
 // Servir arquivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/temp', express.static(tempDir));
+app.use('/recordings', express.static(recordingsDir));
 
 // Rota principal
 app.get('/', (req, res) => {
