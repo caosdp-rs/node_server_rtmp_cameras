@@ -3,45 +3,250 @@
 <head>
   <title>Painel de Câmeras</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f0f0f0;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .camera-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .camera-container {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .camera-title {
+      margin: 0 0 10px 0;
+      color: #333;
+    }
+    video {
+      width: 100%;
+      border-radius: 4px;
+    }
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+    }
+    button {
+      padding: 8px 16px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    .status {
+      padding: 5px 10px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-left: 10px;
+    }
+    .online {
+      background-color: #28a745;
+      color: white;
+    }
+    .offline {
+      background-color: #dc3545;
+      color: white;
+    }
+    #recordings {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    #files {
+      list-style: none;
+      padding: 0;
+    }
+    #files li {
+      margin-bottom: 10px;
+      padding: 10px;
+      background-color: #f8f9fa;
+      border-radius: 4px;
+    }
+    #files a {
+      color: #007bff;
+      text-decoration: none;
+    }
+    #files a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-  <h1>Painel de Câmeras</h1>
-
-  <div id="players"></div>
-
-  <h2>Gravações</h2>
-  <ul id="files"></ul>
+  <div class="container">
+    <h1>Painel de Câmeras</h1>
+    
+    <div class="camera-grid" id="players"></div>
+    
+    <div id="recordings">
+      <h2>Gravações</h2>
+      <ul id="files"></ul>
+    </div>
+  </div>
 
   <script>
-    const cameras = ['camera1', 'camera2', 'camera3'];
+    const cameras = ['camera1', 'camera2', 'camera3']; // Adicione suas câmeras aqui
 
-    cameras.forEach(cam => {
+    function createPlayer(cam) {
+      const container = document.createElement('div');
+      container.className = 'camera-container';
+      
+      const header = document.createElement('div');
+      header.style.display = 'flex';
+      header.style.alignItems = 'center';
+      
+      const title = document.createElement('h3');
+      title.className = 'camera-title';
+      title.innerText = cam;
+      
+      const status = document.createElement('span');
+      status.className = 'status offline';
+      status.id = `status-${cam}`;
+      status.innerText = 'Offline';
+      
+      header.appendChild(title);
+      header.appendChild(status);
+      
       const video = document.createElement('video');
       video.controls = true;
-      video.width = 640;
       video.autoplay = true;
       video.id = cam;
-
+      
+      const controls = document.createElement('div');
+      controls.className = 'controls';
+      
+      const saveButton = document.createElement('button');
+      saveButton.innerText = 'Salvar 60s';
+      saveButton.onclick = () => saveRecording(cam);
+      
+      controls.appendChild(saveButton);
+      
+      container.appendChild(header);
+      container.appendChild(video);
+      container.appendChild(controls);
+      
+      document.getElementById('players').appendChild(container);
+      
       const src = `/live/${cam}/index.m3u8`;
-
+      console.log('Tentando carregar:', src);
+      
       if (Hls.isSupported()) {
-        const hls = new Hls();
+        const hls = new Hls({
+          debug: true,
+          enableWorker: true,
+          lowLatencyMode: true,
+          manifestLoadingTimeOut: 10000,
+          manifestLoadingMaxRetry: 3,
+          manifestLoadingRetryDelay: 500,
+          levelLoadingTimeOut: 10000,
+          levelLoadingMaxRetry: 3,
+          levelLoadingRetryDelay: 500
+        });
+        
         hls.loadSource(src);
         hls.attachMedia(video);
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log(`Manifest carregado para ${cam}`);
+          video.play().catch(e => console.log('Erro ao iniciar playback:', e));
+          updateStatus(cam, true);
+        });
+        
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          console.log(`Erro HLS para ${cam}:`, data);
+          if (data.fatal) {
+            updateStatus(cam, false);
+            switch(data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.log('Erro de rede, tentando reconectar...');
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('Erro de mídia, tentando recuperar...');
+                hls.recoverMediaError();
+                break;
+              default:
+                console.log('Erro fatal, recarregando player...');
+                setTimeout(() => {
+                  hls.loadSource(src);
+                  hls.attachMedia(video);
+                }, 2000);
+                break;
+            }
+          }
+        });
+        
+        // Verificar status do stream periodicamente
+        setInterval(() => {
+          fetch(src)
+            .then(response => {
+              console.log(`Status check ${cam}:`, response.status);
+              updateStatus(cam, response.ok);
+            })
+            .catch(error => {
+              console.log(`Erro ao verificar status ${cam}:`, error);
+              updateStatus(cam, false);
+            });
+        }, 5000);
       } else {
+        console.log('HLS não suportado, tentando fallback...');
         video.src = src;
+        video.addEventListener('error', () => {
+          console.log(`Erro no player nativo para ${cam}`);
+          updateStatus(cam, false);
+        });
       }
+    }
 
-      document.getElementById('players').appendChild(document.createElement('h3')).innerText = cam;
-      document.getElementById('players').appendChild(video);
-    });
+    function updateStatus(cam, isOnline) {
+      const status = document.getElementById(`status-${cam}`);
+      status.className = `status ${isOnline ? 'online' : 'offline'}`;
+      status.innerText = isOnline ? 'Online' : 'Offline';
+    }
 
-    fetch('/files', {
-      headers: { Authorization: 'Bearer painel123' }
-    })
+    function saveRecording(cam) {
+      fetch(`/api/save/${cam}`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer painel123' }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert('Gravação iniciada com sucesso!');
+          loadRecordings();
+        } else {
+          alert('Erro ao iniciar gravação: ' + data.error);
+        }
+      })
+      .catch(err => {
+        alert('Erro ao comunicar com o servidor: ' + err);
+      });
+    }
+
+    function loadRecordings() {
+      fetch('/api/files', {
+        headers: { 'Authorization': 'Bearer painel123' }
+      })
       .then(res => res.json())
       .then(files => {
         const ul = document.getElementById('files');
+        ul.innerHTML = '';
         files.forEach(file => {
           const li = document.createElement('li');
           const a = document.createElement('a');
@@ -51,7 +256,20 @@
           li.appendChild(a);
           ul.appendChild(li);
         });
+      })
+      .catch(err => {
+        console.error('Erro ao carregar gravações:', err);
       });
+    }
+
+    // Inicializar players
+    cameras.forEach(createPlayer);
+    
+    // Carregar gravações iniciais
+    loadRecordings();
+    
+    // Atualizar lista de gravações periodicamente
+    setInterval(loadRecordings, 30000);
   </script>
 </body>
 </html>

@@ -3,9 +3,14 @@ const path = require('path');
 const { PATHS } = require('../config/environment');
 const database = require('./database');
 const { execSync } = require('child_process');
-
-const ffmpegPath = execSync('which ffmpeg').toString().trim();
 const recordingTimers = {};
+
+let ffmpegPath;
+if (process.platform === 'win32') {
+  ffmpegPath = execSync('where ffmpeg').toString().split('\n')[0].trim();
+} else {
+  ffmpegPath = execSync('which ffmpeg').toString().trim();
+}
 
 class RecordingService {
   startContinuousRecording(streamName) {

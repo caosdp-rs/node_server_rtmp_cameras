@@ -1,5 +1,7 @@
 const path = require('path');
 
+const ROOT_DIR = path.resolve(__dirname, '../..');
+
 module.exports = {
   PORT: process.env.PORT || 3000,
   RTMP_PORT: process.env.RTMP_PORT || 1935,
@@ -7,11 +9,11 @@ module.exports = {
   BEARER_TOKEN: process.env.BEARER_TOKEN || 'painel123',
   
   PATHS: {
-    RECORDINGS: path.join(__dirname, '../../recordings'),
-    PUBLIC: path.join(__dirname, '../../public'),
-    MEDIA: path.join(__dirname, '../../media'),
-    STREAM_KEYS: path.join(__dirname, '../../streamKeys.json'),
-    DATABASE: path.join(__dirname, '../../videos.db')
+    RECORDINGS: path.join(ROOT_DIR, 'recordings'),
+    PUBLIC: path.join(ROOT_DIR, 'public'),
+    MEDIA: path.join(ROOT_DIR, 'media'),
+    STREAM_KEYS: path.join(ROOT_DIR, 'streamKeys.json'),
+    DATABASE: path.join(ROOT_DIR, 'videos.db')
   },
   
   CLEANUP: {

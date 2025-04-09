@@ -1,9 +1,8 @@
 const { RTMP_PORT, HTTP_PORT, PATHS } = require('./environment');
-const { execSync } = require('child_process');
+const path = require('path');
 
-const ffmpegPath = execSync('which ffmpeg').toString().trim();
-
-module.exports = {
+const config = {
+  logType: 3,
   rtmp: {
     port: RTMP_PORT,
     chunk_size: 60000,
@@ -14,17 +13,28 @@ module.exports = {
   http: {
     port: HTTP_PORT,
     allow_origin: '*',
-    mediaroot: PATHS.MEDIA
+    mediaroot: PATHS.MEDIA,
+    webroot: PATHS.PUBLIC
   },
   trans: {
-    ffmpeg: ffmpegPath,
+    ffmpeg: require('ffmpeg-static'),
     tasks: [
       {
         app: 'live',
         hls: true,
-        hlsFlags: '[hls_time=60:hls_list_size=1:hls_flags=delete_segments]',
-        dash: false
+        hlsFlags: '[hls_time=2:hls_list_size=3:hls_flags=delete_segments+append_list]',
+        dash: false,
+        options: '-c:v copy -c:a aac -ac 1 -ar 44100 -b:a 96k'
       }
     ]
+  },
+  relay: {
+    ffmpeg: require('ffmpeg-static'),
+    tasks: []
   }
-}; 
+};
+
+// Log da configuração para debug
+console.log('Node Media Server Config:', JSON.stringify(config, null, 2));
+
+module.exports = config; 
