@@ -84,7 +84,7 @@ function startHLSStream(streamName) {
   });
 
   streamProcesses.set(streamName, ffmpegProcess);
-  console.log(`[HLS] Started stream for ${streamName}`);
+  console.log(`[HLS] Iniciado stream para ${streamName}`);
 }
 
 function stopHLSStream(streamName) {
@@ -92,7 +92,7 @@ function stopHLSStream(streamName) {
   if (process) {
     process.kill('SIGTERM');
     streamProcesses.delete(streamName);
-    console.log(`[HLS] Stopped stream for ${streamName}`);
+    console.log(`[HLS] Parado stream para ${streamName}`);
   }
 }
 
@@ -200,7 +200,7 @@ app.get('/files', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Erro ao ler arquivos' });
   }
-});
+  });
 
 // Outras rotas da API
 app.use('/api', apiRoutes);
@@ -223,10 +223,10 @@ setInterval(async () => {
       try {
         await fs.promises.unlink(video.path);
         await database.deleteVideo(video.id);
-        console.log(`[DELETADO] ${video.filename}`);
+            console.log(`[DELETADO] ${video.filename}`);
       } catch (err) {
-        console.error(`[ERRO AO DELETAR] ${video.filename}:`, err.message);
-      }
+            console.error(`[ERRO AO DELETAR] ${video.filename}:`, err.message);
+          }
     }
   } catch (err) {
     console.error('[DB ERROR]', err);
