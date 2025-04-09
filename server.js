@@ -5,6 +5,17 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const ffmpeg = require('ffmpeg-static');
+console.log('FFmpeg path:', ffmpeg);
+
+// Teste se o FFmpeg está funcionando
+const { execSync } = require('child_process');
+try {
+    const version = execSync(`"${ffmpeg}" -version`).toString();
+    console.log('FFmpeg instalado e funcionando:');
+    console.log(version.split('\n')[0]);
+} catch (error) {
+    console.error('Erro ao executar FFmpeg:', error);
+}
 
 // Importações locais
 const { PORT, PATHS, RTMP_PORT, HTTP_PORT } = require('./src/config/environment');
