@@ -84,7 +84,7 @@ function startHLSStream(streamName) {
   });
 
   streamProcesses.set(streamName, ffmpegProcess);
-  console.log(`[HLS] Iniciado stream para ${streamName}`);
+  console.log(`[HLS] Started stream for ${streamName}`);
 }
 
 function stopHLSStream(streamName) {
@@ -92,7 +92,7 @@ function stopHLSStream(streamName) {
   if (process) {
     process.kill('SIGTERM');
     streamProcesses.delete(streamName);
-    console.log(`[HLS] Parado stream para ${streamName}`);
+    console.log(`[HLS] Stopped stream for ${streamName}`);
   }
 }
 
@@ -118,16 +118,22 @@ nms.on('postPublish', (id, StreamPath, args) => {
   const streamName = StreamPath.split('/')[2];
   console.log(`[STREAM ON] ${streamName}`);
   startHLSStream(streamName);
+  recordingService.startContinuousRecording(streamName);
+
 });
 
 nms.on('donePublish', (id, StreamPath, args) => {
   const streamName = StreamPath.split('/')[2];
   console.log(`[STREAM OFF] ${streamName}`);
   stopHLSStream(streamName);
+  recordingService.stopContinuousRecording(streamName);
+
 });
 
 // Garantir que todos os processos FFmpeg sejam encerrados ao fechar o servidor
 process.on('SIGTERM', () => {
+  recordingService.cleanup();
+
   streamProcesses.forEach((process) => {
     process.kill('SIGTERM');
   });
@@ -135,6 +141,8 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
+  recordingService.cleanup();
+
   streamProcesses.forEach((process) => {
     process.kill('SIGTERM');
   });
@@ -200,7 +208,7 @@ app.get('/files', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Erro ao ler arquivos' });
   }
-  });
+});
 
 // Outras rotas da API
 app.use('/api', apiRoutes);
@@ -223,10 +231,10 @@ setInterval(async () => {
       try {
         await fs.promises.unlink(video.path);
         await database.deleteVideo(video.id);
-            console.log(`[DELETADO] ${video.filename}`);
+        console.log(`[DELETADO] ${video.filename}`);
       } catch (err) {
-            console.error(`[ERRO AO DELETAR] ${video.filename}:`, err.message);
-          }
+        console.error(`[ERRO AO DELETAR] ${video.filename}:`, err.message);
+      }
     }
   } catch (err) {
     console.error('[DB ERROR]', err);

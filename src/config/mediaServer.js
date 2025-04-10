@@ -1,5 +1,7 @@
 const { RTMP_PORT, HTTP_PORT, PATHS } = require('./environment');
 const path = require('path');
+const ffmpeg = require('ffmpeg-static');
+
 
 // Tenta encontrar o FFmpeg instalado no sistema ou usa o ffmpeg-static
 let ffmpegPath;
@@ -35,14 +37,15 @@ const config = {
     webroot: PATHS.PUBLIC
   },
   trans: {
-    ffmpeg: ffmpegPath,
+    ffmpeg: ffmpeg,
     tasks: [
       {
         app: 'live',
         hls: true,
         hlsFlags: '[hls_time=2:hls_list_size=3:hls_flags=delete_segments]',
         dash: false,
-        options: '-c:v copy -c:a aac -ac 1 -ar 44100 -b:a 96k'
+        //options: '-c:v copy -c:a aac -ac 1 -ar 44100 -b:a 96k'
+        options: '-c:v copy -c:a aac -ac 1 -ar 44100 -ac 1 -b:a 96k'
       }
     ]
   },
