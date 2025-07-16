@@ -229,6 +229,8 @@ nms.run();
 const app = express();
 
 // Middlewares
+app.use(express.json()); // Middleware para parsing de JSON
+app.use(express.urlencoded({ extended: true })); // Middleware para parsing de form data
 app.use(authMiddleware);
 app.use(express.static(PATHS.PUBLIC));
 app.use('/recordings', express.static(PATHS.RECORDINGS));
