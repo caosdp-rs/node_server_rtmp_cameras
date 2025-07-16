@@ -74,4 +74,33 @@ router.post('/capture-photos', async (req, res) => {
   }
 });
 
+// Rota para listar fotos disponíveis
+router.get('/photos', async (req, res) => {
+  try {
+    const { PATHS } = require('../config/environment');
+    const path = require('path');
+    const fs = require('fs').promises;
+    
+    const photosDir = path.join(PATHS.MEDIA, 'photos');
+    const files = await fs.readdir(photosDir);
+    const photoFiles = files.filter(f => f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.jpeg') || f.toLowerCase().endsWith('.png'));
+    
+    // Criar URLs completas para as fotos
+    const photos = photoFiles.map(file => ({
+      filename: file,
+      url: `/photos/${file}`,
+      camera: file.split('_')[0], // extrair nome da câmera do filename
+      timestamp: file.includes('_TEST_') ? file.split('_TEST_')[1].replace('.jpg', '') : file.split('_')[1]?.replace('.jpg', '')
+    }));
+    
+    res.json({ 
+      success: true, 
+      count: photos.length,
+      photos: photos.sort((a, b) => b.timestamp.localeCompare(a.timestamp)) // ordenar por timestamp (mais recente primeiro)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
