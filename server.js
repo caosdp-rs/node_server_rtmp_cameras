@@ -189,20 +189,14 @@ async function capturePhotosFromSelectedCameras() {
       // SEMPRE tentar capturar do stream RTMP primeiro
       const result = await capturePhoto(streamName);
       
-      // Se não conseguiu capturar do stream (resultado null), criar foto de teste
+      // Se não conseguiu capturar do stream, apenas loga e pula
       if (result === null) {
-        console.log(`[PHOTO] Stream ${streamName} não disponível, criando foto de teste`);
-        await createTestPhoto(streamName);
+        console.log(`[PHOTO] Stream ${streamName} não disponível, pulando captura`);
+        // createTestPhoto DESATIVADO - não cria mais fotos de teste
       }
     } catch (error) {
       console.error(`[PHOTO] Erro ao capturar foto da câmera ${streamName}:`, error.message);
-      // Em caso de erro, tentar criar foto de teste
-      try {
-        console.log(`[PHOTO] Tentando criar foto de teste para ${streamName} após erro`);
-        await createTestPhoto(streamName);
-      } catch (testError) {
-        console.error(`[PHOTO] Erro ao criar foto de teste para ${streamName}:`, testError.message);
-      }
+      // createTestPhoto DESATIVADO - não cria mais fotos de teste em caso de erro
     }
   });
 
