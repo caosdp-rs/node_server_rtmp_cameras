@@ -295,6 +295,11 @@ app.use('/live', express.static(path.join(PATHS.MEDIA, 'live')));
 // Configurar rota para fotos capturadas
 app.use('/photos', express.static(path.join(PATHS.MEDIA, 'photos')));
 
+// Rota para galeria de fotos (página HTML)
+app.get('/photos/', (req, res) => {
+  res.sendFile(path.join(PATHS.PUBLIC, 'photos.html'));
+});
+
 // Configurar proxy para o servidor HLS
 app.use('/live', createProxyMiddleware({
   target: `http://localhost:${HTTP_PORT}`,

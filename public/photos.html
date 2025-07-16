@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galeria de Fotos das Câmeras</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .photo-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .photo-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        .photo-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .photo-info {
+            font-size: 14px;
+            color: #666;
+        }
+        .camera-badge {
+            background: #4CAF50;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .test-badge {
+            background: #FF9800;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .live-badge {
+            background: #f44336;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .btn:hover {
+            background: #1976D2;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📸 Galeria de Fotos das Câmeras</h1>
+        <p>Fotos capturadas automaticamente a cada minuto</p>
+    </div>
+
+    <div class="controls">
+        <button class="btn" onclick="loadPhotos()">🔄 Atualizar</button>
+        <button class="btn" onclick="capturePhotos()">📷 Capturar Agora</button>
+        <span id="photo-count" style="margin-left: 20px; font-weight: bold;"></span>
+    </div>
+
+    <div id="error-message" class="error" style="display: none;"></div>
+    <div id="loading" class="loading">Carregando fotos...</div>
+    <div id="photo-grid" class="photo-grid"></div>
+
+    <script>
+        const bearerToken = 'painel123';
+
+        async function apiRequest(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            
+            const response = await fetch(url, { ...defaultOptions, ...options });
+            
+            if (!response.ok) {
+                throw new Error(`Erro ${response.status}: ${response.statusText}`);
+            }
+            
+            return response.json();
+        }
+
+        async function loadPhotos() {
+            const loading = document.getElementById('loading');
+            const photoGrid = document.getElementById('photo-grid');
+            const errorMessage = document.getElementById('error-message');
+            const photoCount = document.getElementById('photo-count');
+
+            loading.style.display = 'block';
+            photoGrid.innerHTML = '';
+            errorMessage.style.display = 'none';
+
+            try {
+                const data = await apiRequest('/api/photos');
+                
+                if (data.success && data.photos) {
+                    photoCount.textContent = `${data.count} foto(s) encontrada(s)`;
+                    
+                    if (data.photos.length === 0) {
+                        photoGrid.innerHTML = '<p style="text-align: center; color: #666; grid-column: 1/-1;">Nenhuma foto encontrada</p>';
+                    } else {
+                        data.photos.forEach(photo => {
+                            const photoCard = createPhotoCard(photo);
+                            photoGrid.appendChild(photoCard);
+                        });
+                    }
+                } else {
+                    throw new Error('Resposta inválida da API');
+                }
+            } catch (error) {
+                console.error('Erro ao carregar fotos:', error);
+                errorMessage.textContent = `Erro ao carregar fotos: ${error.message}`;
+                errorMessage.style.display = 'block';
+                photoCount.textContent = '';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function createPhotoCard(photo) {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            
+            const isTest = photo.filename.includes('_TEST_');
+            const isLive = !isTest;
+            const timestamp = new Date(photo.timestamp).toLocaleString('pt-BR');
+            
+            card.innerHTML = `
+                <img src="${photo.url}" alt="Foto da ${photo.camera}" 
+                     onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDMwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIzMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjZjVmNWY1Ii8+Cjx0ZXh0IHg9IjE1MCIgeT0iMTAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjOTk5IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiPkVycm8gYW8gY2FycmVnYXIgZm90bzwvdGV4dD4KPC9zdmc+'">
+                <div class="photo-info">
+                    <div style="margin-bottom: 8px;">
+                        <span class="camera-badge">📹 ${photo.camera}</span>
+                        ${isLive ? '<span class="live-badge">🔴 LIVE</span>' : '<span class="test-badge">🧪 TESTE</span>'}
+                    </div>
+                    <div><strong>Data:</strong> ${timestamp}</div>
+                    <div><strong>Arquivo:</strong> ${photo.filename}</div>
+                    <div style="margin-top: 10px;">
+                        <button class="btn" onclick="window.open('${photo.url}', '_blank')" style="font-size: 12px; padding: 5px 10px;">
+                            🔍 Ver Original
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        async function capturePhotos() {
+            const loading = document.getElementById('loading');
+            const errorMessage = document.getElementById('error-message');
+
+            loading.style.display = 'block';
+            errorMessage.style.display = 'none';
+
+            try {
+                const data = await apiRequest('/api/capture-photos', { method: 'POST' });
+                
+                if (data.success) {
+                    // Aguardar um pouco e recarregar as fotos
+                    setTimeout(() => {
+                        loadPhotos();
+                    }, 2000);
+                } else {
+                    throw new Error(data.error || 'Erro desconhecido');
+                }
+            } catch (error) {
+                console.error('Erro ao capturar fotos:', error);
+                errorMessage.textContent = `Erro ao capturar fotos: ${error.message}`;
+                errorMessage.style.display = 'block';
+                loading.style.display = 'none';
+            }
+        }
+
+        // Carregar fotos ao inicializar a página
+        document.addEventListener('DOMContentLoaded', loadPhotos);
+
+        // Auto-refresh a cada 30 segundos
+        setInterval(loadPhotos, 30000);
+    </script>
+</body>
+</html>
