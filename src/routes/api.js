@@ -45,4 +45,33 @@ router.get('/importantes', async (req, res) => {
   }
 });
 
-module.exports = router; 
+// Rotas para gerenciar câmeras selecionadas para captura de fotos
+router.get('/photo-cameras', (req, res) => {
+  const selectedCameras = require('../../server').getSelectedCameras();
+  res.json({ selectedCameras });
+});
+
+router.post('/photo-cameras', (req, res) => {
+  try {
+    const { cameras } = req.body;
+    if (!Array.isArray(cameras)) {
+      return res.status(400).json({ success: false, error: 'cameras deve ser um array' });
+    }
+    
+    require('../../server').setSelectedCameras(cameras);
+    res.json({ success: true, selectedCameras: cameras });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/capture-photos', async (req, res) => {
+  try {
+    await require('../../server').capturePhotosFromSelectedCameras();
+    res.json({ success: true, message: 'Captura de fotos executada' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;

@@ -23,8 +23,12 @@ const requiredDirs = [
   PATHS.RECORDINGS,
   PATHS.PUBLIC,
   PATHS.MEDIA,
-  path.join(PATHS.MEDIA, 'live') // Diretório específico para HLS
+  path.join(PATHS.MEDIA, 'live'), // Diretório específico para HLS
+  path.join(PATHS.MEDIA, 'photos') // Diretório para fotos das câmeras
 ];
+
+// Array de câmeras selecionadas para captura de fotos
+const selectedCameras = ['camera1', 'camera2']; // Adicione aqui os nomes das câmeras que deseja capturar fotos
 
 requiredDirs.forEach(dir => {
   if (!fs.existsSync(dir)) {
@@ -87,6 +91,73 @@ function stopHLSStream(streamName) {
     streamProcesses.delete(streamName);
     console.log(`[HLS] Stopped stream for ${streamName}`);
   }
+}
+
+// Função para capturar foto de uma câmera específica
+function capturePhoto(streamName) {
+  return new Promise((resolve, reject) => {
+    const photosDir = path.join(PATHS.MEDIA, 'photos');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const photoPath = path.join(photosDir, `${streamName}_${timestamp}.jpg`);
+
+    // Verificar se o stream está ativo
+    if (!streamProcesses.has(streamName)) {
+      console.log(`[PHOTO] Stream ${streamName} não está ativo, pulando captura`);
+      resolve(null);
+      return;
+    }
+
+    const ffmpegProcess = spawn(ffmpeg, [
+      '-i', `rtmp://localhost:${RTMP_PORT}/live/${streamName}`,
+      '-vframes', '1',
+      '-q:v', '2',
+      '-y', // sobrescrever arquivo se existir
+      photoPath
+    ]);
+
+    let errorOutput = '';
+
+    ffmpegProcess.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    ffmpegProcess.on('error', (error) => {
+      console.error(`[PHOTO ERROR ${streamName}]`, error);
+      reject(error);
+    });
+
+    ffmpegProcess.on('exit', (code) => {
+      if (code === 0) {
+        console.log(`[PHOTO] Capturada: ${photoPath}`);
+        resolve(photoPath);
+      } else {
+        console.error(`[PHOTO ERROR ${streamName}] Exit code: ${code}`);
+        console.error(`[PHOTO ERROR ${streamName}] Output: ${errorOutput}`);
+        reject(new Error(`FFmpeg exited with code ${code}`));
+      }
+    });
+  });
+}
+
+// Função para capturar fotos de todas as câmeras selecionadas
+async function capturePhotosFromSelectedCameras() {
+  if (selectedCameras.length === 0) {
+    console.log('[PHOTO] Nenhuma câmera selecionada para captura de fotos');
+    return;
+  }
+
+  console.log(`[PHOTO] Iniciando captura de fotos para ${selectedCameras.length} câmera(s)`);
+  
+  const promises = selectedCameras.map(async (streamName) => {
+    try {
+      await capturePhoto(streamName);
+    } catch (error) {
+      console.error(`[PHOTO] Erro ao capturar foto da câmera ${streamName}:`, error.message);
+    }
+  });
+
+  await Promise.allSettled(promises);
+  console.log('[PHOTO] Ciclo de captura de fotos concluído');
 }
 
 // Configuração do Node Media Server
@@ -165,6 +236,9 @@ app.use('/recordings', express.static(PATHS.RECORDINGS));
 // Configurar rota específica para arquivos HLS
 app.use('/live', express.static(path.join(PATHS.MEDIA, 'live')));
 
+// Configurar rota para fotos capturadas
+app.use('/photos', express.static(path.join(PATHS.MEDIA, 'photos')));
+
 // Configurar proxy para o servidor HLS
 app.use('/live', createProxyMiddleware({
   target: `http://localhost:${HTTP_PORT}`,
@@ -233,3 +307,20 @@ setInterval(async () => {
     console.error('[DB ERROR]', err);
   }
 }, 60000);
+
+// Captura automática de fotos a cada 1 minuto
+setInterval(async () => {
+  await capturePhotosFromSelectedCameras();
+}, 60000); // 60000ms = 1 minuto
+
+console.log('[PHOTO] Sistema de captura automática de fotos iniciado (intervalo: 1 minuto)');
+
+// Exportar funções para uso nas rotas API
+module.exports = {
+  getSelectedCameras: () => selectedCameras,
+  setSelectedCameras: (cameras) => {
+    selectedCameras.splice(0, selectedCameras.length, ...cameras);
+    console.log(`[PHOTO] Câmeras selecionadas atualizadas: ${cameras.join(', ')}`);
+  },
+  capturePhotosFromSelectedCameras
+};
