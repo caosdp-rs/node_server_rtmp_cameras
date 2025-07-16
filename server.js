@@ -139,6 +139,46 @@ function capturePhoto(streamName) {
   });
 }
 
+// Função para criar uma foto de teste quando não há streams ativos
+function createTestPhoto(streamName) {
+  return new Promise((resolve, reject) => {
+    const photosDir = path.join(PATHS.MEDIA, 'photos');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const photoPath = path.join(photosDir, `${streamName}_TEST_${timestamp}.jpg`);
+
+    // Criar uma imagem de teste usando FFmpeg (simplificada)
+    const ffmpegProcess = spawn(ffmpeg, [
+      '-f', 'lavfi',
+      '-i', 'color=blue:size=640x480:duration=1',
+      '-vframes', '1',
+      '-y',
+      photoPath
+    ]);
+
+    let errorOutput = '';
+
+    ffmpegProcess.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+    });
+
+    ffmpegProcess.on('error', (error) => {
+      console.error(`[TEST PHOTO ERROR ${streamName}]`, error);
+      reject(error);
+    });
+
+    ffmpegProcess.on('exit', (code) => {
+      if (code === 0) {
+        console.log(`[TEST PHOTO] Criada: ${photoPath}`);
+        resolve(photoPath);
+      } else {
+        console.error(`[TEST PHOTO ERROR ${streamName}] Exit code: ${code}`);
+        console.error(`[TEST PHOTO ERROR ${streamName}] Output: ${errorOutput}`);
+        reject(new Error(`FFmpeg exited with code ${code}`));
+      }
+    });
+  });
+}
+
 // Função para capturar fotos de todas as câmeras selecionadas
 async function capturePhotosFromSelectedCameras() {
   if (selectedCameras.length === 0) {
@@ -150,9 +190,23 @@ async function capturePhotosFromSelectedCameras() {
   
   const promises = selectedCameras.map(async (streamName) => {
     try {
-      await capturePhoto(streamName);
+      // Tentar capturar do stream ativo primeiro
+      const result = await capturePhoto(streamName);
+      
+      // Se não conseguiu capturar do stream (resultado null), criar foto de teste
+      if (result === null) {
+        console.log(`[PHOTO] Criando foto de teste para ${streamName}`);
+        await createTestPhoto(streamName);
+      }
     } catch (error) {
       console.error(`[PHOTO] Erro ao capturar foto da câmera ${streamName}:`, error.message);
+      // Em caso de erro, tentar criar foto de teste
+      try {
+        console.log(`[PHOTO] Tentando criar foto de teste para ${streamName} após erro`);
+        await createTestPhoto(streamName);
+      } catch (testError) {
+        console.error(`[PHOTO] Erro ao criar foto de teste para ${streamName}:`, testError.message);
+      }
     }
   });
 
