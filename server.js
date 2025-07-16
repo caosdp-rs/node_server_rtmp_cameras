@@ -9,13 +9,6 @@ console.log('FFmpeg path:', ffmpeg);
 
 // Teste se o FFmpeg está funcionando
 const { execSync } = require('child_process');
-try {
-    const version = execSync(`"${ffmpeg}" -version`).toString();
-    console.log('FFmpeg instalado e funcionando:');
-    console.log(version.split('\n')[0]);
-} catch (error) {
-    console.error('Erro ao executar FFmpeg:', error);
-}
 
 // Importações locais
 const { PORT, PATHS, RTMP_PORT, HTTP_PORT } = require('./src/config/environment');
@@ -218,7 +211,7 @@ app.get('/', (req, res) => {
 
 // Iniciar servidor Express
 app.listen(PORT, () => {
-  console.log("Nova versão");
+  console.log("Nova versão-X2");
   console.log(`Painel: http://localhost:${PORT} (requer Bearer Token)`);
 });
 
