@@ -100,17 +100,13 @@ function capturePhoto(streamName) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const photoPath = path.join(photosDir, `${streamName}_${timestamp}.jpg`);
 
-    // Verificar se o stream está ativo
-    if (!streamProcesses.has(streamName)) {
-      console.log(`[PHOTO] Stream ${streamName} não está ativo, pulando captura`);
-      resolve(null);
-      return;
-    }
+    console.log(`[PHOTO] Tentando capturar foto do stream: ${streamName}`);
 
     const ffmpegProcess = spawn(ffmpeg, [
       '-i', `rtmp://localhost:${RTMP_PORT}/live/${streamName}`,
       '-vframes', '1',
       '-q:v', '2',
+      '-timeout', '5000000', // 5 segundos de timeout
       '-y', // sobrescrever arquivo se existir
       photoPath
     ]);
@@ -128,12 +124,12 @@ function capturePhoto(streamName) {
 
     ffmpegProcess.on('exit', (code) => {
       if (code === 0) {
-        console.log(`[PHOTO] Capturada: ${photoPath}`);
+        console.log(`[PHOTO] Capturada do stream RTMP: ${photoPath}`);
         resolve(photoPath);
       } else {
-        console.error(`[PHOTO ERROR ${streamName}] Exit code: ${code}`);
-        console.error(`[PHOTO ERROR ${streamName}] Output: ${errorOutput}`);
-        reject(new Error(`FFmpeg exited with code ${code}`));
+        console.log(`[PHOTO] Falha ao capturar do stream RTMP ${streamName} (código: ${code}), stream pode não estar ativo`);
+        // Retorna null para indicar que deve tentar foto de teste
+        resolve(null);
       }
     });
   });
@@ -190,12 +186,12 @@ async function capturePhotosFromSelectedCameras() {
   
   const promises = selectedCameras.map(async (streamName) => {
     try {
-      // Tentar capturar do stream ativo primeiro
+      // SEMPRE tentar capturar do stream RTMP primeiro
       const result = await capturePhoto(streamName);
       
       // Se não conseguiu capturar do stream (resultado null), criar foto de teste
       if (result === null) {
-        console.log(`[PHOTO] Criando foto de teste para ${streamName}`);
+        console.log(`[PHOTO] Stream ${streamName} não disponível, criando foto de teste`);
         await createTestPhoto(streamName);
       }
     } catch (error) {
