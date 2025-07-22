@@ -61,6 +61,78 @@ if (fs.existsSync(liveDir)) {
 console.log('[STARTUP] Limpeza do sistema concluída');
 
 const streamProcesses = new Map();
+const cameraStatus = new Map(); // Rastrear status de cada câmera
+const cameraMetrics = new Map(); // Métricas de cada câmera (uptime, dados recebidos, etc.)
+
+// Função para inicializar status das câmeras
+function initializeCameraStatus() {
+  const streamKeys = JSON.parse(fs.readFileSync('./streamKeys.json', 'utf8'));
+  Object.keys(streamKeys).forEach(camera => {
+    cameraStatus.set(camera, {
+      isConnected: false,
+      isStreaming: false,
+      lastSeen: null,
+      connectionTime: null,
+      hasHLSFiles: false,
+      transcoding: false
+    });
+    cameraMetrics.set(camera, {
+      totalConnections: 0,
+      totalDisconnections: 0,
+      bytesReceived: 0,
+      uptime: 0,
+      lastError: null
+    });
+  });
+}
+
+// Função para obter status de uma câmera específica
+function getCameraStatus(cameraName) {
+  return {
+    status: cameraStatus.get(cameraName) || null,
+    metrics: cameraMetrics.get(cameraName) || null,
+    hasProcess: streamProcesses.has(cameraName),
+    hlsFiles: getHLSFileStatus(cameraName)
+  };
+}
+
+// Função para verificar arquivos HLS de uma câmera
+function getHLSFileStatus(cameraName) {
+  const hlsDir = path.join(PATHS.MEDIA, 'live', cameraName);
+  try {
+    if (fs.existsSync(hlsDir)) {
+      const files = fs.readdirSync(hlsDir);
+      const tsFiles = files.filter(f => f.endsWith('.ts'));
+      const m3u8Files = files.filter(f => f.endsWith('.m3u8'));
+      
+      // Verificar se arquivos são recentes (últimos 30 segundos)
+      const now = Date.now();
+      const recentFiles = files.filter(file => {
+        try {
+          const filePath = path.join(hlsDir, file);
+          const stats = fs.statSync(filePath);
+          return (now - stats.mtime.getTime()) < 30000; // 30 segundos
+        } catch (e) {
+          return false;
+        }
+      });
+      
+      return {
+        totalFiles: files.length,
+        tsFiles: tsFiles.length,
+        m3u8Files: m3u8Files.length,
+        recentFiles: recentFiles.length,
+        hasRecentActivity: recentFiles.length > 0
+      };
+    }
+  } catch (e) {
+    return { error: e.message };
+  }
+  return { totalFiles: 0, hasRecentActivity: false };
+}
+
+// Inicializar status das câmeras
+initializeCameraStatus();
 
 // Função para limpar arquivos HLS antigos/corrompidos
 function cleanHLSFiles(streamName) {
@@ -362,6 +434,23 @@ nms.on('preConnect', (id, args) => {
 
 nms.on('postConnect', (id, args) => {
   console.log('[NodeEvent postConnect]', `id=${id}`, args);
+  
+  // Atualizar métricas de conexão
+  const streamPath = args.app + '/' + args.streamPath;
+  if (streamPath.includes('/live/')) {
+    const streamName = streamPath.split('/')[2];
+    if (cameraStatus.has(streamName)) {
+      const status = cameraStatus.get(streamName);
+      status.isConnected = true;
+      status.lastSeen = new Date();
+      status.connectionTime = new Date();
+      
+      const metrics = cameraMetrics.get(streamName);
+      metrics.totalConnections++;
+      
+      console.log(`[CAMERA STATUS] ${streamName} conectada`);
+    }
+  }
 });
 
 nms.on('prePublish', (id, StreamPath, args) => {
@@ -373,17 +462,38 @@ nms.on('prePublish', (id, StreamPath, args) => {
 nms.on('postPublish', (id, StreamPath, args) => {
   const streamName = StreamPath.split('/')[2];
   console.log(`[STREAM ON] ${streamName}`);
+  
+  // Atualizar status da câmera
+  if (cameraStatus.has(streamName)) {
+    const status = cameraStatus.get(streamName);
+    status.isStreaming = true;
+    status.lastSeen = new Date();
+    console.log(`[CAMERA STATUS] ${streamName} iniciou streaming`);
+  }
+  
   startHLSStream(streamName);
   recordingService.startContinuousRecording(streamName);
-
 });
 
 nms.on('donePublish', (id, StreamPath, args) => {
   const streamName = StreamPath.split('/')[2];
   console.log(`[STREAM OFF] ${streamName}`);
+  
+  // Atualizar status da câmera
+  if (cameraStatus.has(streamName)) {
+    const status = cameraStatus.get(streamName);
+    status.isStreaming = false;
+    status.isConnected = false;
+    status.lastSeen = new Date();
+    
+    const metrics = cameraMetrics.get(streamName);
+    metrics.totalDisconnections++;
+    
+    console.log(`[CAMERA STATUS] ${streamName} desconectada`);
+  }
+  
   stopHLSStream(streamName);
   recordingService.stopContinuousRecording(streamName);
-
 });
 
 // Garantir que todos os processos FFmpeg sejam encerrados ao fechar o servidor
@@ -581,5 +691,8 @@ module.exports = {
   cleanHLSFiles,
   killOrphanFFmpegProcesses,
   stopHLSStream,
-  startHLSStream
+  startHLSStream,
+  getCameraStatus,
+  cameraStatus,
+  cameraMetrics
 };

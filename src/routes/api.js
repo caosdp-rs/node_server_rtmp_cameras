@@ -207,4 +207,80 @@ router.post('/updates', (req, res) => {
   }
 });
 
+// Rotas para monitoramento de câmeras
+router.get('/camera-status', (req, res) => {
+  try {
+    const getCameraStatus = require('../../server').getCameraStatus;
+    const streamKeys = JSON.parse(require('fs').readFileSync('./streamKeys.json', 'utf8'));
+    
+    const allCamerasStatus = {};
+    Object.keys(streamKeys).forEach(camera => {
+      allCamerasStatus[camera] = getCameraStatus(camera);
+    });
+    
+    res.json({
+      success: true,
+      cameras: allCamerasStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/camera-status/:camera', (req, res) => {
+  try {
+    const camera = req.params.camera;
+    const getCameraStatus = require('../../server').getCameraStatus;
+    const status = getCameraStatus(camera);
+    
+    if (!status.status) {
+      return res.status(404).json({ 
+        success: false, 
+        error: `Câmera ${camera} não encontrada` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      camera: camera,
+      ...status,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/cameras-summary', (req, res) => {
+  try {
+    const getCameraStatus = require('../../server').getCameraStatus;
+    const streamKeys = JSON.parse(require('fs').readFileSync('./streamKeys.json', 'utf8'));
+    
+    const summary = {
+      total: Object.keys(streamKeys).length,
+      connected: 0,
+      streaming: 0,
+      withRecentActivity: 0,
+      transcoding: 0
+    };
+    
+    Object.keys(streamKeys).forEach(camera => {
+      const status = getCameraStatus(camera);
+      if (status.status.isConnected) summary.connected++;
+      if (status.status.isStreaming) summary.streaming++;
+      if (status.hlsFiles.hasRecentActivity) summary.withRecentActivity++;
+      if (status.status.transcoding) summary.transcoding++;
+    });
+    
+    res.json({
+      success: true,
+      summary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

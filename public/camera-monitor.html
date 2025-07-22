@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Monitoramento de Câmeras - Status</title>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f0f2f5;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .header {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    .summary-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .summary-number {
+      font-size: 2em;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .summary-label {
+      color: #666;
+      font-size: 0.9em;
+    }
+    .cameras-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 20px;
+    }
+    .camera-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      border-left: 5px solid #dc3545;
+    }
+    .camera-card.connected {
+      border-left-color: #28a745;
+    }
+    .camera-card.streaming {
+      border-left-color: #007bff;
+    }
+    .camera-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .camera-name {
+      font-size: 1.2em;
+      font-weight: bold;
+      margin: 0;
+    }
+    .status-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8em;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    .status-offline {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .status-connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status-streaming {
+      background-color: #cce5ff;
+      color: #004085;
+    }
+    .camera-info {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      font-size: 0.9em;
+    }
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+    }
+    .info-label {
+      color: #666;
+    }
+    .info-value {
+      font-weight: bold;
+    }
+    .auto-refresh {
+      margin-bottom: 10px;
+    }
+    .auto-refresh label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .refresh-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: #28a745;
+      margin-left: 10px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.3; }
+      100% { opacity: 1; }
+    }
+    .last-updated {
+      color: #666;
+      font-size: 0.8em;
+      text-align: center;
+      margin-top: 20px;
+    }
+    .hls-status {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #f8f9fa;
+      border-radius: 4px;
+      font-size: 0.8em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📹 Monitoramento de Câmeras</h1>
+      <div class="auto-refresh">
+        <label>
+          <input type="checkbox" id="autoRefresh" checked>
+          Atualização automática (5s)
+          <span class="refresh-indicator" id="refreshIndicator"></span>
+        </label>
+        <button onclick="manualRefresh()" style="margin-left: 20px;">🔄 Atualizar Agora</button>
+      </div>
+    </div>
+
+    <div class="summary-grid" id="summaryGrid">
+      <!-- Resumo será carregado aqui -->
+    </div>
+
+    <div class="cameras-grid" id="camerasGrid">
+      <!-- Câmeras serão carregadas aqui -->
+    </div>
+
+    <div class="last-updated" id="lastUpdated">
+      <!-- Timestamp da última atualização -->
+    </div>
+  </div>
+
+  <script>
+    let autoRefreshEnabled = true;
+    let refreshInterval;
+
+    // Controle de auto-refresh
+    document.getElementById('autoRefresh').addEventListener('change', (e) => {
+      autoRefreshEnabled = e.target.checked;
+      const indicator = document.getElementById('refreshIndicator');
+      
+      if (autoRefreshEnabled) {
+        startAutoRefresh();
+        indicator.style.display = 'inline-block';
+      } else {
+        clearInterval(refreshInterval);
+        indicator.style.display = 'none';
+      }
+    });
+
+    function startAutoRefresh() {
+      clearInterval(refreshInterval);
+      refreshInterval = setInterval(() => {
+        if (autoRefreshEnabled) {
+          loadCameraData();
+        }
+      }, 5000);
+    }
+
+    function manualRefresh() {
+      loadCameraData();
+    }
+
+    function formatTime(dateString) {
+      if (!dateString) return 'Nunca';
+      const date = new Date(dateString);
+      return date.toLocaleTimeString('pt-BR');
+    }
+
+    function formatDuration(start, end) {
+      if (!start) return '0s';
+      const startTime = new Date(start);
+      const endTime = end ? new Date(end) : new Date();
+      const diff = Math.floor((endTime - startTime) / 1000);
+      
+      if (diff < 60) return `${diff}s`;
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+      return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+    }
+
+    function getStatusInfo(camera, status) {
+      if (status.isStreaming) {
+        return {
+          class: 'streaming',
+          badge: 'status-streaming',
+          text: 'Streaming'
+        };
+      } else if (status.isConnected) {
+        return {
+          class: 'connected',
+          badge: 'status-connected',
+          text: 'Conectada'
+        };
+      } else {
+        return {
+          class: 'offline',
+          badge: 'status-offline',
+          text: 'Offline'
+        };
+      }
+    }
+
+    function renderSummary(summary) {
+      const summaryGrid = document.getElementById('summaryGrid');
+      summaryGrid.innerHTML = `
+        <div class="summary-card">
+          <div class="summary-number">${summary.total}</div>
+          <div class="summary-label">Total de Câmeras</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-number" style="color: #28a745;">${summary.connected}</div>
+          <div class="summary-label">Conectadas</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-number" style="color: #007bff;">${summary.streaming}</div>
+          <div class="summary-label">Streaming</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-number" style="color: #fd7e14;">${summary.withRecentActivity}</div>
+          <div class="summary-label">Com Atividade Recente</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-number" style="color: #6f42c1;">${summary.transcoding}</div>
+          <div class="summary-label">Transcodificando</div>
+        </div>
+      `;
+    }
+
+    function renderCameras(cameras) {
+      const camerasGrid = document.getElementById('camerasGrid');
+      const cameraElements = Object.entries(cameras).map(([cameraName, data]) => {
+        const status = data.status;
+        const metrics = data.metrics;
+        const hlsFiles = data.hlsFiles;
+        const statusInfo = getStatusInfo(cameraName, status);
+
+        return `
+          <div class="camera-card ${statusInfo.class}">
+            <div class="camera-header">
+              <h3 class="camera-name">${cameraName}</h3>
+              <span class="status-badge ${statusInfo.badge}">${statusInfo.text}</span>
+            </div>
+            
+            <div class="camera-info">
+              <div class="info-item">
+                <span class="info-label">Última Atividade:</span>
+                <span class="info-value">${formatTime(status.lastSeen)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Tempo Online:</span>
+                <span class="info-value">${formatDuration(status.connectionTime, status.isConnected ? null : status.lastSeen)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Total Conexões:</span>
+                <span class="info-value">${metrics.totalConnections}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Desconexões:</span>
+                <span class="info-value">${metrics.totalDisconnections}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Processo FFmpeg:</span>
+                <span class="info-value">${data.hasProcess ? '✅ Ativo' : '❌ Inativo'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Transcodificação:</span>
+                <span class="info-value">${status.transcoding ? '✅ Sim' : '❌ Não'}</span>
+              </div>
+            </div>
+
+            <div class="hls-status">
+              <strong>Arquivos HLS:</strong><br>
+              📁 Total: ${hlsFiles.totalFiles || 0} | 
+              🎬 Segmentos: ${hlsFiles.tsFiles || 0} | 
+              📄 Playlist: ${hlsFiles.m3u8Files || 0}<br>
+              🕒 Atividade Recente: ${hlsFiles.hasRecentActivity ? '✅ Sim' : '❌ Não'} 
+              (${hlsFiles.recentFiles || 0} arquivos novos)
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      camerasGrid.innerHTML = cameraElements;
+    }
+
+    async function loadCameraData() {
+      try {
+        // Carregar resumo
+        const summaryResponse = await fetch('/api/cameras-summary');
+        const summaryData = await summaryResponse.json();
+        
+        if (summaryData.success) {
+          renderSummary(summaryData.summary);
+        }
+
+        // Carregar status das câmeras
+        const cameraResponse = await fetch('/api/camera-status');
+        const cameraData = await cameraResponse.json();
+        
+        if (cameraData.success) {
+          renderCameras(cameraData.cameras);
+          document.getElementById('lastUpdated').textContent = 
+            `Última atualização: ${new Date().toLocaleString('pt-BR')}`;
+        }
+      } catch (error) {
+        console.error('Erro ao carregar dados das câmeras:', error);
+      }
+    }
+
+    // Carregar dados iniciais
+    loadCameraData();
+    
+    // Iniciar auto-refresh
+    startAutoRefresh();
+  </script>
+</body>
+</html>
