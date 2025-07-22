@@ -129,20 +129,35 @@ As seguintes configurações foram implementadas para evitar problemas de cache:
 
 Este erro indica que o FFmpeg não suporta o codec de vídeo usado pela câmera.
 
+#### Erro: "spawn /usr/bin/ffmpeg ENOENT" 
+
+Este erro indica que o sistema está tentando usar um caminho incorreto do FFmpeg (Linux em vez do Windows).
+
 **Soluções:**
 
-1. **Forçar transcodificação (solução mais compatível):**
+1. **Verificar instalação do FFmpeg:**
+   ```bash
+   npm run test-ffmpeg
+   ```
+
+2. **Forçar transcodificação (solução mais compatível):**
    - Editar `server.js` linha ~119
    - Trocar `-c:v copy` por `-c:v libx264`
    - Adicionar parâmetros de qualidade
 
-2. **Verificar codec da câmera:**
+3. **Verificar codec da câmera:**
    ```bash
    # Testar stream diretamente
    ffmpeg -i rtmp://localhost:1935/live/camera1 -t 5 -f null -
    ```
 
-3. **Instalar FFmpeg completo (alternativa):**
+4. **Reinstalar ffmpeg-static:**
+   ```bash
+   npm uninstall ffmpeg-static
+   npm install ffmpeg-static
+   ```
+
+5. **Instalar FFmpeg completo (alternativa):**
    ```powershell
    # Via Chocolatey
    choco install ffmpeg-full
@@ -151,7 +166,7 @@ Este erro indica que o FFmpeg não suporta o codec de vídeo usado pela câmera.
    scoop install ffmpeg
    ```
 
-4. **Configuração de fallback no código:**
+6. **Configuração de fallback no código:**
    - Implementar detecção automática de codec
    - Usar transcodificação como fallback
 

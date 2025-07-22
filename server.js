@@ -4,8 +4,25 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const ffmpeg = require('ffmpeg-static');
-console.log('FFmpeg path:', ffmpeg);
+const FFmpegManager = require('./src/utils/ffmpeg-manager');
+
+// Inicializar FFmpeg Manager
+let ffmpegManager = null;
+let ffmpeg = null;
+
+async function initializeFFmpeg() {
+  console.log('[STARTUP] Inicializando FFmpeg...');
+  try {
+    ffmpegManager = await FFmpegManager.create();
+    ffmpeg = ffmpegManager.getFFmpegPath();
+    console.log('[STARTUP] ✅ FFmpeg inicializado com sucesso');
+    return true;
+  } catch (error) {
+    console.error('[STARTUP] ❌ Falha na inicialização do FFmpeg:', error.message);
+    console.error('[STARTUP] 💡 Execute: npm run test-ffmpeg para diagnosticar');
+    return false;
+  }
+}
 
 // Teste se o FFmpeg está funcionando
 const { execSync } = require('child_process');
@@ -134,6 +151,14 @@ function getHLSFileStatus(cameraName) {
 // Inicializar status das câmeras
 initializeCameraStatus();
 
+// Função helper para obter FFmpeg com verificação
+function getFFmpegCommand() {
+  if (!ffmpegManager || !ffmpeg) {
+    throw new Error('FFmpeg não foi inicializado. Execute initializeFFmpeg() primeiro.');
+  }
+  return ffmpegManager.getFFmpegCommand();
+}
+
 // Função para limpar arquivos HLS antigos/corrompidos
 function cleanHLSFiles(streamName) {
   const hlsDir = path.join(PATHS.MEDIA, 'live', streamName);
@@ -230,9 +255,23 @@ function startHLSStream(streamName, useTranscoding = false) {
   ];
 
   const ffmpegArgs = [...baseArgs, ...videoArgs, ...audioArgs, ...hlsArgs];
-  console.log(`[FFmpeg ${streamName}] Command: ${ffmpeg} ${ffmpegArgs.join(' ')}`);
+  
+  try {
+    const ffmpegCmd = getFFmpegCommand();
+    console.log(`[FFmpeg ${streamName}] Command: ${ffmpegCmd} ${ffmpegArgs.join(' ')}`);
 
-  const ffmpegProcess = spawn(ffmpeg, ffmpegArgs);
+    const ffmpegProcess = spawn(ffmpegCmd, ffmpegArgs);
+    
+    ffmpegProcess.on('error', (error) => {
+      console.error(`[FFmpeg ${streamName}] Erro no processo:`, error);
+      console.error(`[FFmpeg ${streamName}] Comando tentado: ${ffmpegCmd}`);
+      
+      // Tentar reinicializar o FFmpeg se houver erro
+      setTimeout(async () => {
+        console.log(`[FFmpeg ${streamName}] Tentando reinicializar FFmpeg...`);
+        await initializeFFmpeg();
+      }, 5000);
+    });
 
   ffmpegProcess.stderr.on('data', (data) => {
     const output = data.toString();
@@ -256,10 +295,6 @@ function startHLSStream(streamName, useTranscoding = false) {
     }
   });
 
-  ffmpegProcess.on('error', (error) => {
-    console.error(`[FFmpeg ${streamName} Error]`, error);
-  });
-
   ffmpegProcess.on('exit', (code, signal) => {
     console.log(`[FFmpeg ${streamName}] Process exited with code ${code} and signal ${signal}`);
     streamProcesses.delete(streamName);
@@ -281,6 +316,11 @@ function startHLSStream(streamName, useTranscoding = false) {
 
   streamProcesses.set(streamName, ffmpegProcess);
   console.log(`[HLS] Started stream for ${streamName}`);
+  
+  } catch (error) {
+    console.error(`[FFmpeg ${streamName}] Erro ao iniciar processo:`, error.message);
+    console.error(`[FFmpeg ${streamName}] FFmpeg pode não estar disponível. Execute: npm run test-ffmpeg`);
+  }
 }
 
 function stopHLSStream(streamName) {
@@ -538,16 +578,28 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[Promessa rejeitada não tratada]', reason);
 });
 
-// Iniciar servidor
-nms.run();
+// Função principal para inicializar e iniciar o servidor
+async function startServer() {
+  console.log('[STARTUP] Iniciando servidor...');
+  
+  // Inicializar FFmpeg primeiro
+  const ffmpegOk = await initializeFFmpeg();
+  if (!ffmpegOk) {
+    console.error('[STARTUP] ❌ Não foi possível inicializar o FFmpeg. Algumas funcionalidades podem não funcionar.');
+    console.error('[STARTUP] 💡 Execute: npm run test-ffmpeg para diagnosticar');
+  }
+  
+  // Iniciar servidor RTMP
+  nms.run();
+  console.log('[STARTUP] ✅ Servidor RTMP iniciado');
+  
+  // Configuração do Express
+  const app = express();
 
-// Configuração do Express
-const app = express();
-
-// Middlewares
-app.use(express.json()); // Middleware para parsing de JSON
-app.use(express.urlencoded({ extended: true })); // Middleware para parsing de form data
-app.use(authMiddleware);
+  // Middlewares
+  app.use(express.json()); // Middleware para parsing de JSON
+  app.use(express.urlencoded({ extended: true })); // Middleware para parsing de form data
+  app.use(authMiddleware);
 app.use(express.static(PATHS.PUBLIC));
 app.use('/recordings', express.static(PATHS.RECORDINGS));
 
@@ -639,6 +691,12 @@ app.listen(PORT, () => {
   console.log("Nova versão-X2");
   console.log(`Painel: http://localhost:${PORT} (requer Bearer Token)`);
 });
+
+console.log('[STARTUP] ✅ Servidor HTTP iniciado');
+}
+
+// Iniciar o servidor
+startServer().catch(console.error);
 
 // Tarefa de limpeza automática
 setInterval(async () => {

@@ -9,8 +9,10 @@
     "clean-start": "node cleanup.js && node server.js",
     "dev": "node cleanup.js && node server.js",
     "test-codecs": "node codec-test.js",
+    "test-ffmpeg": "node test-ffmpeg-recording.js",
     "check-camera": "node check-camera.js",
-    "check-camera5": "node check-camera.js camera5"
+    "check-camera5": "node check-camera.js camera5",
+    "check-camera7": "node check-camera.js camera7"
   },
   "dependencies": {
     "axios": "^1.6.0",
