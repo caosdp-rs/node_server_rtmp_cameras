@@ -6,6 +6,34 @@ const path = require('path');
 
 console.log('=== Script de Limpeza do Sistema de Câmeras ===');
 
+// Função para testar codecs FFmpeg
+function testFFmpegCodecs() {
+  try {
+    console.log('🔄 Testando codecs FFmpeg...');
+    
+    // Testar se libx264 está disponível
+    const codecTest = execSync('ffmpeg -hide_banner -codecs | findstr libx264', { encoding: 'utf8' });
+    if (codecTest.includes('libx264')) {
+      console.log('✅ Codec libx264 disponível');
+    }
+    
+    // Testar se AAC está disponível  
+    const aacTest = execSync('ffmpeg -hide_banner -codecs | findstr aac', { encoding: 'utf8' });
+    if (aacTest.includes('aac')) {
+      console.log('✅ Codec AAC disponível');
+    }
+    
+    // Mostrar versão do FFmpeg
+    const version = execSync('ffmpeg -version', { encoding: 'utf8' });
+    const versionLine = version.split('\n')[0];
+    console.log(`ℹ️  ${versionLine}`);
+    
+  } catch (err) {
+    console.log('❌ Erro ao testar codecs FFmpeg:', err.message);
+    console.log('💡 Considere instalar uma versão completa do FFmpeg');
+  }
+}
+
 // Função para matar processos FFmpeg órfãos
 function killOrphanFFmpegProcesses() {
   try {
@@ -87,6 +115,9 @@ function checkPorts() {
 function runCleanup() {
   console.log('🚀 Iniciando limpeza do sistema...\n');
   
+  testFFmpegCodecs();
+  console.log('');
+  
   killOrphanFFmpegProcesses();
   console.log('');
   
@@ -105,6 +136,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  testFFmpegCodecs,
   killOrphanFFmpegProcesses,
   cleanHLSFiles,
   checkPorts,

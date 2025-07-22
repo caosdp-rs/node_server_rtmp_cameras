@@ -96,7 +96,8 @@ function killOrphanFFmpegProcesses() {
   }
 }
 
-function startHLSStream(streamName) {
+function startHLSStream(streamName, useTranscoding = false) {
+  console.log(`[HLS] Starting stream for ${streamName} (transcoding: ${useTranscoding})`);
   const hlsDir = path.join(PATHS.MEDIA, 'live', streamName);
   
   // Limpar arquivos HLS antigos antes de iniciar
@@ -114,13 +115,35 @@ function startHLSStream(streamName) {
     setTimeout(() => {}, 1000);
   }
 
-  const ffmpegProcess = spawn(ffmpeg, [
+  // Configuração base do FFmpeg
+  const baseArgs = [
     '-i', `rtmp://localhost:${RTMP_PORT}/live/${streamName}`,
-    '-c:v', 'copy',
+    '-avoid_negative_ts', 'make_zero',
+    '-fflags', '+genpts'
+  ];
+
+  // Configuração de vídeo - usar copy se possível, senão transcodificar
+  const videoArgs = useTranscoding ? [
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '28',
+    '-maxrate', '2000k',
+    '-bufsize', '4000k',
+    '-g', '50'
+  ] : [
+    '-c:v', 'copy'
+  ];
+
+  // Configuração de áudio
+  const audioArgs = [
     '-c:a', 'aac',
     '-ar', '44100',
     '-ac', '1',
-    '-b:a', '96k',
+    '-b:a', '96k'
+  ];
+
+  // Configuração HLS
+  const hlsArgs = [
     '-f', 'hls',
     '-hls_time', '2',
     '-hls_list_size', '3',
@@ -132,10 +155,33 @@ function startHLSStream(streamName) {
     '-reconnect_streamed', '1',
     '-reconnect_delay_max', '2',
     path.join(hlsDir, 'index.m3u8')
-  ]);
+  ];
+
+  const ffmpegArgs = [...baseArgs, ...videoArgs, ...audioArgs, ...hlsArgs];
+  console.log(`[FFmpeg ${streamName}] Command: ${ffmpeg} ${ffmpegArgs.join(' ')}`);
+
+  const ffmpegProcess = spawn(ffmpeg, ffmpegArgs);
 
   ffmpegProcess.stderr.on('data', (data) => {
-    console.log(`[FFmpeg ${streamName}] ${data.toString()}`);
+    const output = data.toString();
+    console.log(`[FFmpeg ${streamName}] ${output}`);
+    
+    // Detectar erros de codec e tentar transcodificação como fallback
+    if (output.includes('Video codec') && output.includes('is not implemented') && !useTranscoding) {
+      console.warn(`[FFmpeg ${streamName}] Codec não suportado detectado. Tentando com transcodificação...`);
+      ffmpegProcess.kill('SIGTERM');
+      setTimeout(() => {
+        startHLSStream(streamName, true); // Retry with transcoding
+      }, 2000);
+      return;
+    }
+    
+    // Detectar outros erros críticos
+    if (output.includes('No such file or directory') || 
+        output.includes('Connection refused') ||
+        output.includes('Server returned 404 Not Found')) {
+      console.error(`[FFmpeg ${streamName}] Erro crítico detectado: ${output}`);
+    }
   });
 
   ffmpegProcess.on('error', (error) => {
@@ -150,6 +196,14 @@ function startHLSStream(streamName) {
     if (code !== 0 && code !== null) {
       console.log(`[FFmpeg ${streamName}] Limpando arquivos após saída inesperada`);
       setTimeout(() => cleanHLSFiles(streamName), 1000);
+      
+      // Se não estava usando transcodificação e houve erro, tentar com transcodificação
+      if (!useTranscoding && (code === 1 || code === 69)) {
+        console.warn(`[FFmpeg ${streamName}] Tentando reiniciar com transcodificação devido ao código de saída ${code}`);
+        setTimeout(() => {
+          startHLSStream(streamName, true);
+        }, 3000);
+      }
     }
   });
 

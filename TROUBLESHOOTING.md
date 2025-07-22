@@ -31,7 +31,12 @@ O sistema agora executa uma limpeza automática ao iniciar:
 npm run cleanup
 ```
 
-**Opção 2 - Script PowerShell (Windows):**
+**Opção 2 - Teste de Codecs:**
+```bash
+npm run test-codecs
+```
+
+**Opção 3 - Script PowerShell (Windows):**
 ```powershell
 .\cleanup.ps1
 ```
@@ -118,6 +123,38 @@ As seguintes configurações foram implementadas para evitar problemas de cache:
 - [ ] Usar `npm run clean-start` para inicialização limpa
 - [ ] Monitorar logs para detectar problemas
 
+### 🚨 Problemas de Codec FFmpeg
+
+#### Erro: "Video codec (c) is not implemented"
+
+Este erro indica que o FFmpeg não suporta o codec de vídeo usado pela câmera.
+
+**Soluções:**
+
+1. **Forçar transcodificação (solução mais compatível):**
+   - Editar `server.js` linha ~119
+   - Trocar `-c:v copy` por `-c:v libx264`
+   - Adicionar parâmetros de qualidade
+
+2. **Verificar codec da câmera:**
+   ```bash
+   # Testar stream diretamente
+   ffmpeg -i rtmp://localhost:1935/live/camera1 -t 5 -f null -
+   ```
+
+3. **Instalar FFmpeg completo (alternativa):**
+   ```powershell
+   # Via Chocolatey
+   choco install ffmpeg-full
+   
+   # Ou via Scoop
+   scoop install ffmpeg
+   ```
+
+4. **Configuração de fallback no código:**
+   - Implementar detecção automática de codec
+   - Usar transcodificação como fallback
+
 ### 🆘 Se nada funcionar
 
 1. Reiniciar o computador (remove todos os processos travados)
@@ -125,6 +162,7 @@ As seguintes configurações foram implementadas para evitar problemas de cache:
 3. Verificar se o FFmpeg está instalado corretamente
 4. Checar se há software antivírus bloqueando processos
 5. Verificar firewall/rede para as portas RTMP
+6. **NOVO:** Verificar compatibilidade de codec da câmera
 
 ---
 
