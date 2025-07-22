@@ -98,7 +98,7 @@ async function checkCameraStatus() {
       console.log(`💡 Inicie o servidor com: npm start`);
     } else if (error.response && error.response.status === 404) {
       console.log(`❌ Câmera '${CAMERA_NAME}' não encontrada`);
-      console.log(`💡 Câmeras disponíveis: camera1, camera2, camera3, camera4, camera5, camera6`);
+      console.log(`💡 Câmeras disponíveis: camera1, camera2, camera3, camera4, camera5, camera6, camera7`);
     } else {
       console.log(`❌ Erro: ${error.message}`);
     }
