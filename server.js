@@ -37,10 +37,70 @@ requiredDirs.forEach(dir => {
   }
 });
 
+// Limpeza inicial - matar processos órfãos e limpar cache
+console.log('[STARTUP] Iniciando limpeza do sistema...');
+killOrphanFFmpegProcesses();
+
+// Limpar todos os arquivos HLS existentes na inicialização
+const liveDir = path.join(PATHS.MEDIA, 'live');
+if (fs.existsSync(liveDir)) {
+  try {
+    const cameraDirs = fs.readdirSync(liveDir);
+    cameraDirs.forEach(cameraDir => {
+      const cameraPath = path.join(liveDir, cameraDir);
+      if (fs.statSync(cameraPath).isDirectory()) {
+        cleanHLSFiles(cameraDir);
+      }
+    });
+    console.log('[STARTUP] Cache HLS limpo');
+  } catch (err) {
+    console.error('[STARTUP] Erro ao limpar cache HLS:', err.message);
+  }
+}
+
+console.log('[STARTUP] Limpeza do sistema concluída');
+
 const streamProcesses = new Map();
+
+// Função para limpar arquivos HLS antigos/corrompidos
+function cleanHLSFiles(streamName) {
+  const hlsDir = path.join(PATHS.MEDIA, 'live', streamName);
+  
+  try {
+    if (fs.existsSync(hlsDir)) {
+      const files = fs.readdirSync(hlsDir);
+      files.forEach(file => {
+        const filePath = path.join(hlsDir, file);
+        try {
+          fs.unlinkSync(filePath);
+          console.log(`[CLEANUP] Removido arquivo HLS: ${file}`);
+        } catch (err) {
+          console.error(`[CLEANUP ERROR] Erro ao remover ${file}:`, err.message);
+        }
+      });
+    }
+  } catch (err) {
+    console.error(`[CLEANUP ERROR] Erro ao limpar diretório HLS ${streamName}:`, err.message);
+  }
+}
+
+// Função para matar processos FFmpeg órfãos
+function killOrphanFFmpegProcesses() {
+  try {
+    // No Windows, mata processos ffmpeg que podem estar travados
+    execSync('taskkill /f /im ffmpeg.exe', { stdio: 'ignore' });
+    console.log('[CLEANUP] Processos FFmpeg órfãos eliminados');
+  } catch (err) {
+    // Ignora erro se não houver processos para matar
+    console.log('[CLEANUP] Nenhum processo FFmpeg órfão encontrado');
+  }
+}
 
 function startHLSStream(streamName) {
   const hlsDir = path.join(PATHS.MEDIA, 'live', streamName);
+  
+  // Limpar arquivos HLS antigos antes de iniciar
+  cleanHLSFiles(streamName);
   
   // Criar diretório HLS se não existir
   if (!fs.existsSync(hlsDir)) {
@@ -50,6 +110,8 @@ function startHLSStream(streamName) {
   // Parar processo existente se houver
   if (streamProcesses.has(streamName)) {
     stopHLSStream(streamName);
+    // Aguardar um pouco para garantir que o processo anterior foi encerrado
+    setTimeout(() => {}, 1000);
   }
 
   const ffmpegProcess = spawn(ffmpeg, [
@@ -62,8 +124,13 @@ function startHLSStream(streamName) {
     '-f', 'hls',
     '-hls_time', '2',
     '-hls_list_size', '3',
-    '-hls_flags', 'delete_segments',
+    '-hls_flags', 'delete_segments+omit_endlist',
+    '-hls_allow_cache', '0',
     '-hls_segment_filename', path.join(hlsDir, 'segment_%d.ts'),
+    '-reconnect', '1',
+    '-reconnect_at_eof', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_delay_max', '2',
     path.join(hlsDir, 'index.m3u8')
   ]);
 
@@ -78,6 +145,12 @@ function startHLSStream(streamName) {
   ffmpegProcess.on('exit', (code, signal) => {
     console.log(`[FFmpeg ${streamName}] Process exited with code ${code} and signal ${signal}`);
     streamProcesses.delete(streamName);
+    
+    // Se o processo saiu inesperadamente, tentar limpar arquivos corrompidos
+    if (code !== 0 && code !== null) {
+      console.log(`[FFmpeg ${streamName}] Limpando arquivos após saída inesperada`);
+      setTimeout(() => cleanHLSFiles(streamName), 1000);
+    }
   });
 
   streamProcesses.set(streamName, ffmpegProcess);
@@ -87,9 +160,30 @@ function startHLSStream(streamName) {
 function stopHLSStream(streamName) {
   const process = streamProcesses.get(streamName);
   if (process) {
-    process.kill('SIGTERM');
+    try {
+      process.kill('SIGTERM');
+      
+      // Se SIGTERM não funcionar após 3 segundos, usar SIGKILL
+      setTimeout(() => {
+        if (streamProcesses.has(streamName)) {
+          console.log(`[HLS] Forçando encerramento do processo ${streamName}`);
+          try {
+            process.kill('SIGKILL');
+          } catch (err) {
+            console.error(`[HLS] Erro ao forçar encerramento: ${err.message}`);
+          }
+        }
+      }, 3000);
+      
+    } catch (err) {
+      console.error(`[HLS] Erro ao parar processo ${streamName}:`, err.message);
+    }
+    
     streamProcesses.delete(streamName);
     console.log(`[HLS] Stopped stream for ${streamName}`);
+    
+    // Limpar arquivos HLS após parar o stream
+    setTimeout(() => cleanHLSFiles(streamName), 500);
   }
 }
 
@@ -240,21 +334,35 @@ nms.on('donePublish', (id, StreamPath, args) => {
 
 // Garantir que todos os processos FFmpeg sejam encerrados ao fechar o servidor
 process.on('SIGTERM', () => {
+  console.log('[SHUTDOWN] Iniciando encerramento gracioso...');
   recordingService.cleanup();
 
-  streamProcesses.forEach((process) => {
-    process.kill('SIGTERM');
+  // Parar todos os streams HLS
+  streamProcesses.forEach((process, streamName) => {
+    stopHLSStream(streamName);
   });
-  process.exit(0);
+  
+  // Aguardar um pouco e depois matar processos órfãos
+  setTimeout(() => {
+    killOrphanFFmpegProcesses();
+    process.exit(0);
+  }, 2000);
 });
 
 process.on('SIGINT', () => {
+  console.log('[SHUTDOWN] Iniciando encerramento gracioso...');
   recordingService.cleanup();
 
-  streamProcesses.forEach((process) => {
-    process.kill('SIGTERM');
+  // Parar todos os streams HLS
+  streamProcesses.forEach((process, streamName) => {
+    stopHLSStream(streamName);
   });
-  process.exit(0);
+  
+  // Aguardar um pouco e depois matar processos órfãos
+  setTimeout(() => {
+    killOrphanFFmpegProcesses();
+    process.exit(0);
+  }, 2000);
 });
 
 // Tratamento de erros
@@ -328,6 +436,34 @@ app.get('/files', async (req, res) => {
   }
 });
 
+// Rota para limpeza manual do cache
+app.post('/api/cleanup', (req, res) => {
+  try {
+    console.log('[API] Iniciando limpeza manual...');
+    
+    // Matar processos órfãos
+    killOrphanFFmpegProcesses();
+    
+    // Limpar cache HLS de todas as câmeras
+    const liveDir = path.join(PATHS.MEDIA, 'live');
+    if (fs.existsSync(liveDir)) {
+      const cameraDirs = fs.readdirSync(liveDir);
+      cameraDirs.forEach(cameraDir => {
+        const cameraPath = path.join(liveDir, cameraDir);
+        if (fs.statSync(cameraPath).isDirectory()) {
+          cleanHLSFiles(cameraDir);
+        }
+      });
+    }
+    
+    res.json({ success: true, message: 'Limpeza concluída' });
+    console.log('[API] Limpeza manual concluída');
+  } catch (error) {
+    console.error('[API] Erro na limpeza manual:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Outras rotas da API
 app.use('/api', apiRoutes);
 app.get('/', (req, res) => {
@@ -364,7 +500,21 @@ setInterval(async () => {
   await capturePhotosFromSelectedCameras();
 }, 60000); // 60000ms = 1 minuto
 
+// Verificação de saúde dos streams a cada 30 segundos
+setInterval(() => {
+  streamProcesses.forEach((process, streamName) => {
+    if (process.killed) {
+      console.log(`[HEALTH] Stream ${streamName} está morto, removendo da lista`);
+      streamProcesses.delete(streamName);
+      
+      // Tentar limpar arquivos corrompidos
+      setTimeout(() => cleanHLSFiles(streamName), 1000);
+    }
+  });
+}, 30000); // 30000ms = 30 segundos
+
 console.log('[PHOTO] Sistema de captura automática de fotos iniciado (intervalo: 1 minuto)');
+console.log('[HEALTH] Sistema de verificação de saúde dos streams iniciado (intervalo: 30 segundos)');
 
 // Exportar funções para uso nas rotas API
 module.exports = {
@@ -373,5 +523,9 @@ module.exports = {
     selectedCameras.splice(0, selectedCameras.length, ...cameras);
     console.log(`[PHOTO] Câmeras selecionadas atualizadas: ${cameras.join(', ')}`);
   },
-  capturePhotosFromSelectedCameras
+  capturePhotosFromSelectedCameras,
+  cleanHLSFiles,
+  killOrphanFFmpegProcesses,
+  stopHLSStream,
+  startHLSStream
 };
